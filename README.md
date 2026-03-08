@@ -2,7 +2,6 @@
 
 > Full-stack AI medical assistant with agentic services: appointments, email/WhatsApp notifications, live drug search, medication adherence tracking, and persistent AI chat.
 
----
 
 ## Features
 
