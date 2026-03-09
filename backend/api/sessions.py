@@ -4,7 +4,7 @@ Text: Mistral
 Images: LLaVA (Ollama)
 PDF: PyMuPDF + Mistral
 """
-
+ 
 import logging
 from fastapi import APIRouter, HTTPException, UploadFile, File, Form
 from pydantic import BaseModel, field_validator
