@@ -6,7 +6,7 @@ from backend.services.session_service import get_session
 from backend.services.adherence_service import get_adherence_stats, get_medications, get_dose_logs
 
 router = APIRouter()
-
+ 
 
 @router.get("/export/session/{session_id}")
 def export_session_pdf(session_id: str):
