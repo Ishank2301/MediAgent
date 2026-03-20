@@ -29,6 +29,7 @@ const TOOLS = [
   { id:'bmi',          emoji:'⚖️', label:'BMI Calculator',  desc:'Health metric tool' },
 ]
 
+
 const RISK_CLS = {
   emergency: 'bg-red-50 text-red-700 border-red-200 dark:bg-red-950/40 dark:text-red-300 dark:border-red-900',
   urgent:    'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-900',
