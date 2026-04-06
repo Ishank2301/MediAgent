@@ -1,4 +1,5 @@
-
+pytorch==2.0.05
+sklearn
 fastapi==0.109.2
 uvicorn[standard]==0.27.1
 python-multipart==0.0.9
