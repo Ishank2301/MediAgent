@@ -13,7 +13,7 @@ function useTheme() {
 
 // ── Constants ────────────────────────────────────────────────────────────────
 const MODES = {
-  general:      { label: 'General',      emoji: '🤖', grad: 'from-slate-500 to-slate-700',  hint: 'Ask anything health-related' },
+  general:      { label: 'General',      emoji: '😊', grad: 'from-slate-500 to-slate-700',  hint: 'Ask anything health-related' },
   symptom:      { label: 'Symptoms',     emoji: '🩺', grad: 'from-blue-500 to-blue-700',    hint: 'Describe and assess symptoms' },
   interaction:  { label: 'Drug Check',   emoji: '💊', grad: 'from-amber-500 to-amber-700',  hint: 'Check drug interactions' },
   prescription: { label: 'Prescription', emoji: '📋', grad: 'from-violet-500 to-violet-700', hint: 'Understand prescriptions' },
