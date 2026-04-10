@@ -1,7 +1,4 @@
-"""
-Chat Agent — multi-turn medical conversation with full session memory.
-Supports prefilled_response for vision/document analysis results.
-"""
+
 import json, logging
 from backend.services.llm_service import ask_llm_chat
 from backend.services.session_service import add_message, get_messages
