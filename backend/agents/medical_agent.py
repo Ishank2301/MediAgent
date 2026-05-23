@@ -2,6 +2,7 @@
 MediAgent — Unified AI Medical Agent
 Combines symptom analysis (project1) with drug interaction intelligence (project2).
 """
+
 from backend.services.llm_service import ask_llm
 from backend.triage.rules import assess_triage
 from backend.services.interaction_service import check_polypharmacy
@@ -10,7 +11,13 @@ from backend.services.memory_service import save_memory
 USER_ID = "demo_user"  # Will be replaced with real auth later
 
 
-def handle_symptom(text: str, age: int = None, sex: str = None, duration_days: int = None, severity: int = None) -> dict:
+def handle_symptom(
+    text: str,
+    age: int = None,
+    sex: str = None,
+    duration_days: int = None,
+    severity: int = None,
+) -> dict:
     """
     Full symptom analysis pipeline:
     1. Triage assessment
@@ -29,9 +36,22 @@ def handle_symptom(text: str, age: int = None, sex: str = None, duration_days: i
         context_parts.append(f"Duration: {duration_days} days")
     if severity:
         context_parts.append(f"Self-reported severity (1-10): {severity}")
-    context_parts.append(f"Initial triage assessment: {triage['level'].upper()} — {triage['action']}")
+    context_parts.append(
+        f"Initial triage assessment: {triage['level'].upper()} — {triage['action']}"
+    )
 
-    prompt = "\n".join(context_parts) + "\n\nPlease provide a thorough medical guidance response."
+    prompt = "\n".join(context_parts) + (
+        "\n\nPlease provide a DETAILED and comprehensive medical guidance response that includes:\n"
+        "1. Urgency assessment and what symptoms require immediate attention\n"
+        "2. Most likely conditions that could cause these symptoms (ranked)\n"
+        "3. Detailed explanation of each possible condition\n"
+        "4. What questions to ask a doctor\n"
+        "5. Self-care measures and home management options\n"
+        "6. Red flags that require immediate medical attention\n"
+        "7. When to see a doctor and what type (e.g., GP, ER, specialist)\n"
+        "8. Important preventive measures\n\n"
+        "Make your response thorough, clear, and actionable."
+    )
     response = ask_llm(prompt)
 
     save_memory(
@@ -71,17 +91,24 @@ def handle_interaction(drugs: list[str]) -> dict:
     for item in interactions:
         pair_str = f"{item['pair'][0]} + {item['pair'][1]}"
         if item["interactions"]:
-            interaction_summary.append(f"{pair_str}: {'; '.join(item['interactions'][:2])}")
+            interaction_summary.append(
+                f"{pair_str}: {'; '.join(item['interactions'][:2])}"
+            )
         else:
-            interaction_summary.append(f"{pair_str}: No significant interaction found in database.")
+            interaction_summary.append(
+                f"{pair_str}: No significant interaction found in database."
+            )
 
-        if risk_order.get(item.get("risk_level", "LOW"), 1) > risk_order.get(max_risk, 1):
+        if risk_order.get(item.get("risk_level", "LOW"), 1) > risk_order.get(
+            max_risk, 1
+        ):
             max_risk = item["risk_level"]
 
     prompt = (
         f"Patient is taking these medications: {', '.join(drugs)}\n\n"
-        f"Interaction data found:\n" + "\n".join(interaction_summary) +
-        f"\n\nOverall risk level: {max_risk}\n\n"
+        f"Interaction data found:\n"
+        + "\n".join(interaction_summary)
+        + f"\n\nOverall risk level: {max_risk}\n\n"
         "Please provide a clear, detailed explanation of these drug interactions, their clinical significance, "
         "and specific recommendations for the patient and their healthcare provider."
     )

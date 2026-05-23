@@ -38,6 +38,14 @@ export const sendFile = (sid, file, message='', mode='general') => {
 // ── Tools ──────────────────────────────────────────────────────────────────
 export const checkInteraction = drugs  => api.post('/interaction',{drugs}).then(r=>r.data)
 export const getMedicineInfo  = name   => api.get(`/medicine/${encodeURIComponent(name)}`).then(r=>r.data)
+export const scanPrescription = file   => {
+  const fd = new FormData()
+  fd.append('file', file)
+  return api.post('/prescription/scan', fd, {
+    headers: {'Content-Type': 'multipart/form-data'},
+    timeout: 60000,
+  }).then(r=>r.data)
+}
 
 // ── Adherence ──────────────────────────────────────────────────────────────
 export const getMedications   = uid         => api.get('/medications',{params:{user_id:uid}}).then(r=>r.data)
