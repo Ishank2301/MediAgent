@@ -1,8 +1,8 @@
 import axios from 'axios'
 
 const api = axios.create({
-  baseURL: '/api',
-  timeout: 60000,
+  baseURL: import.meta.env.VITE_API_BASE_URL || '/api',
+  timeout: 45000,
 })
 
 // Global error interceptor - normalise all errors
