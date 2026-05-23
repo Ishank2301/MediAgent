@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import * as API from './api/client'
 
-// ── Theme ────────────────────────────────────────────────────────────────────
+// ── Theme 
 function useTheme() {
   const [dark, setDark] = useState(() => localStorage.getItem('ma-theme') === 'dark')
   useEffect(() => {
@@ -11,7 +11,7 @@ function useTheme() {
   return [dark, () => setDark(d => !d)]
 }
 
-// ── Constants ────────────────────────────────────────────────────────────────
+// ── Constants 
 const MODES = {
   general:      { label: 'General',      emoji: '😊', grad: 'from-slate-500 to-slate-700',  hint: 'Ask anything health-related' },
   symptom:      { label: 'Symptoms',     emoji: '🩺', grad: 'from-blue-500 to-blue-700',    hint: 'Describe and assess symptoms' },

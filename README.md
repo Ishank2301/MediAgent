@@ -1,106 +1,87 @@
-# ✚ MediAgent v5.0 — AI Medical Copilot
+# MediAgent
 
-> Full-stack AI medical assistant with agentic services: appointments, email/WhatsApp notifications, live drug search, medication adherence tracking, and persistent AI chat.
+Full-stack AI medical assistant with persistent chat, symptom triage, drug interaction checks, appointment reminders, medication adherence tracking, PDF export, and file analysis.
 
+<<<<<<< HEAD
+> Disclaimer: MediAgent is for informational and educational use only. It does not provide medical advice, diagnosis, or treatment. Always consult a qualified healthcare professional.
+=======
+>>>>>>> 82b3e2ae31d851bacf2297cc50268510f869a118
 
-## Features
+## Project Structure
 
-| Module | Description |
-|---|---|
-| 💬 **Persistent Chat** | 4 modes — General, Symptoms, Drug Check, Prescription. History saved forever. |
-| 🧠 **Smart Triage** | Weighted symptom scoring + risk factor detection (diabetes, pregnancy, etc.) |
-| 📅 **Appointment Planner** | Book & manage doctor appointments. One-click email/WhatsApp reminders. |
-| 🔔 **Email Notifications** | Medication reminders, adherence reports with PDF, missed dose alerts (Gmail SMTP) |
-| 💬 **WhatsApp Notifications** | All alerts via Twilio sandbox — free to set up in 5 minutes |
-| ⏰ **Auto Scheduler** | Background jobs: daily med reminders, appointment alerts, weekly reports |
-| 🌐 **Web Search Agent** | Live drug info via DuckDuckGo + PubMed + AI summarization |
-| 👨‍⚕️ **Doctor Finder** | Suggests specialists based on your symptoms |
-| 💊 **Drug Interaction Checker** | RxNorm + FDA database + AI explanation |
-| 🔬 **Medicine Info** | FDA label data lookup with AI-powered patient summary |
-| 💉 **Medication Tracker** | Daily schedule, dose logging, 30-day adherence % |
-| 📄 **PDF Export** | Chat sessions + adherence reports as professional PDFs |
-| ⚖️ **BMI Calculator** | Metric & imperial with visual gauge |
-| 🌙 **Dark Mode** | Full dark/light theme, persisted to localStorage |
-
----
-
-## Quick Start
-
-### 1. Install Ollama & pull a model
-```bash
-# Install: https://ollama.com
-ollama pull mistral:7b-instruct-q4_0
-# Or faster: ollama pull phi3:mini
+```text
+MediAgent/
+  backend/                  FastAPI app and service layer
+    agents/                 Chat and medical orchestration
+    api/                    REST endpoints
+    services/               Gemini, search, OCR, PDF, email, Twilio, DB helpers
+    triage/                 Rule-based symptom triage
+    main.py                 FastAPI entrypoint
+    scheduler.py            Background reminder jobs
+  frontend/                 React + Vite + Tailwind app
+    src/App.jsx             Main UI
+    src/api/client.js       Axios API client
+  mediagent.db              Local SQLite database
+  requirements.txt          Python dependencies
+  .env.example              Environment variable template
 ```
 
-### 2. Install Python dependencies
+## Local Setup
+
 ```bash
 pip install -r requirements.txt
+copy .env.example .env
 ```
 
-### 3. Configure credentials (optional but recommended)
-```bash
-cp .env.example .env
-# Edit .env — add Gmail App Password + Twilio credentials
+Add your Gemini key to `.env`:
+
+```env
+GEMINI_API_KEY=your_key_here
+GEMINI_MODEL=gemini-2.5-flash
 ```
 
-### 4. Start backend
+Start the backend:
+
 ```bash
 uvicorn backend.main:app --reload --port 8000
 ```
 
-### 5. Start frontend
+Start the frontend:
+
 ```bash
 cd frontend
 npm install
 npm run dev
-# Open http://localhost:5173
 ```
 
----
+Open `http://localhost:5173`.
 
-## Notification Setup
+## Free Deployment
 
-### ✉️ Email (Gmail — free)
-1. Enable 2FA on your Google account
-2. Visit **myaccount.google.com/apppasswords**
-3. Create App Password → "Mail" → copy 16-char code
-4. Set `SMTP_USER` and `SMTP_PASS` in `.env`
+Recommended free split:
 
-### 💬 WhatsApp (Twilio — free sandbox)
-1. Sign up at **twilio.com** (no credit card needed for sandbox)
-2. Go to **Messaging → Try it out → Send a WhatsApp message**
-3. Text `join <word>` to `+1 415 523 8886` from YOUR WhatsApp
-4. Copy `TWILIO_ACCOUNT_SID` + `TWILIO_AUTH_TOKEN` to `.env`
+1. Deploy `frontend/` to Vercel or Netlify.
+   - Build command: `npm run build`
+   - Output directory: `dist`
+   - Env: `VITE_API_BASE_URL=https://your-backend-url/api`
 
-### ⏰ Auto Reminders
-Add to `.env`:
+2. Deploy the backend to Render, Railway, or Koyeb as a Python web service.
+   - Root directory: repository root
+   - Build command: `pip install -r requirements.txt`
+   - Start command: `uvicorn backend.main:app --host 0.0.0.0 --port $PORT`
+   - Env:
+     - `GEMINI_API_KEY=...`
+     - `GEMINI_MODEL=gemini-2.5-flash`
+     - `FRONTEND_ORIGINS=https://your-frontend-url`
+
+3. Database note:
+   - The app uses local SQLite (`mediagent.db`). Free hosts often have ephemeral disks, so chat history can reset after redeploys or restarts.
+   - For real persistent deployment, move the DB to a free managed Postgres service later.
+
+## Gemini Notes
+
+The app uses Google Gemini through the Gemini API. `gemini-2.5-flash` is the default because it is fast, capable, and suitable for chat-style medical guidance. For even faster but lighter answers, set:
+
+```env
+GEMINI_MODEL=gemini-2.5-flash-lite
 ```
-REMINDER_EMAIL=your@gmail.com
-REMINDER_PHONE=+1234567890
-```
-The background scheduler then automatically sends:
-- **Daily at 7 AM UTC** — today's medication schedule
-- **Every hour** — appointment reminders (24h in advance)
-- **Every Monday at 8 AM UTC** — weekly adherence report + PDF attachment
-
----
-
-## API Docs
-Visit **http://localhost:8000/docs** for the interactive Swagger UI.
-
----
-
-## Tech Stack
-- **Backend**: FastAPI · SQLAlchemy · SQLite · APScheduler
-- **LLM**: Ollama (local, free) — Mistral 7B or Phi-3 Mini
-- **Frontend**: React 18 · Vite · Tailwind CSS · Syne + Instrument Sans fonts
-- **PDF**: ReportLab
-- **Email**: Python smtplib (Gmail SMTP, no paid service)
-- **WhatsApp**: Twilio Messaging API
-- **Drug data**: FDA OpenFDA API · RxNorm API
-- **Search**: DuckDuckGo Instant Answers · PubMed E-utilities
-
----
-
-> ⚠️ **Disclaimer**: MediAgent is for informational and educational purposes only. It does not provide medical advice, diagnosis, or treatment. Always consult a qualified healthcare professional.

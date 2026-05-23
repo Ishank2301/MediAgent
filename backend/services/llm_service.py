@@ -1,145 +1,175 @@
-import os
-import logging
 import base64
-import requests
+import logging
+import os
+
 import fitz  # PyMuPDF
+import requests
 
 log = logging.getLogger("mediagent.llm")
 
-OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434")
-TEXT_MODEL = os.getenv("OLLAMA_MODEL", "mistral:7b-instruct-q4_0")
-VISION_MODEL = os.getenv("OLLAMA_VISION_MODEL", "llava")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash").strip()
+GEMINI_API_BASE = os.getenv(
+    "GEMINI_API_BASE",
+    "https://generativelanguage.googleapis.com/v1beta",
+).rstrip("/")
 
-TIMEOUT = 90
-MAX_PDF_CHARS = 15000  # prevent huge token overflow
-
+TIMEOUT = int(os.getenv("GEMINI_TIMEOUT", "35"))
+MAX_OUTPUT_TOKENS = int(os.getenv("GEMINI_MAX_OUTPUT_TOKENS", "700"))
+MAX_PDF_CHARS = int(os.getenv("MAX_PDF_CHARS", "15000"))
 
 SYSTEM_PROMPT = (
-    "You are MediAgent, an AI medical assistant. "
-    "You are NOT a licensed doctor. "
-    "Always recommend professional consultation. "
-    "Be structured, medically responsible, and clear. "
-    "Use headings and bullet points when helpful. "
-    "If situation looks urgent, clearly state emergency action."
+    "You are MediAgent, an AI medical assistant. You are not a licensed doctor. "
+    "Give concise, medically responsible guidance in clear language. "
+    "Do not diagnose definitively. Mention urgent/emergency care when red flags appear. "
+    "Recommend consultation with a qualified clinician when appropriate."
 )
 
 
-# ─────────────────────────────────────────────
-# TEXT CHAT (MISTRAL)
-# ─────────────────────────────────────────────
-
-
 def ask_llm(prompt: str) -> str:
+    return ask_llm_chat(SYSTEM_PROMPT, [{"role": "user", "content": prompt}])
+
+
+def ask_llm_chat(system_prompt: str, messages: list[dict]) -> str:
+    contents = _build_contents(messages)
     payload = {
-        "model": TEXT_MODEL,
-        "prompt": f"{SYSTEM_PROMPT}\n\nUser: {prompt}\nAssistant:",
-        "stream": False,
-        "options": {
-            "temperature": 0.4,
-            "num_predict": 800,
+        "systemInstruction": {"parts": [{"text": system_prompt}]},
+        "contents": contents,
+        "generationConfig": {
+            "temperature": 0.35,
+            "topP": 0.9,
+            "maxOutputTokens": MAX_OUTPUT_TOKENS,
         },
     }
-
-    try:
-        r = requests.post(f"{OLLAMA_URL}/api/generate", json=payload, timeout=TIMEOUT)
-        r.raise_for_status()
-        return r.json().get("response", "").strip()
-
-    except requests.exceptions.ConnectionError:
-        return "⚠️ Ollama is not running. Start it using: ollama serve"
-
-    except requests.exceptions.Timeout:
-        return "⚠️ Model response timed out."
-
-    except Exception as e:
-        log.exception("Mistral error")
-        return f"⚠️ Mistral error: {str(e)}"
-
-
-# ─────────────────────────────────────────────
-# IMAGE ANALYSIS (LLAVA)
-# ─────────────────────────────────────────────
+    return _generate_content(payload)
 
 
 def ask_llm_with_image(prompt: str, image_bytes: bytes) -> str:
-    b64 = base64.b64encode(image_bytes).decode("utf-8")
-
-    vision_prompt = (
-        f"{SYSTEM_PROMPT}\n\n"
-        "Analyze this medical image carefully.\n"
-        f"User Question: {prompt}"
-    )
-
     payload = {
-        "model": VISION_MODEL,
-        "prompt": vision_prompt,
-        "images": [b64],
-        "stream": False,
-        "options": {
-            "temperature": 0.3,
+        "systemInstruction": {"parts": [{"text": SYSTEM_PROMPT}]},
+        "contents": [
+            {
+                "role": "user",
+                "parts": [
+                    {"text": prompt},
+                    {
+                        "inlineData": {
+                            "mimeType": _detect_image_mime(image_bytes),
+                            "data": base64.b64encode(image_bytes).decode("utf-8"),
+                        }
+                    },
+                ],
+            }
+        ],
+        "generationConfig": {
+            "temperature": 0.25,
+            "maxOutputTokens": MAX_OUTPUT_TOKENS,
         },
     }
-
-    try:
-        r = requests.post(f"{OLLAMA_URL}/api/generate", json=payload, timeout=TIMEOUT)
-        r.raise_for_status()
-        return r.json().get("response", "").strip()
-
-    except requests.exceptions.ConnectionError:
-        return "⚠️ Ollama vision model not running. Run: ollama pull llava"
-
-    except Exception as e:
-        log.exception("Vision error")
-        return f"⚠️ Vision model error: {str(e)}"
-
-
-# ─────────────────────────────────────────────
-# PDF ANALYSIS (PYMUPDF + MISTRAL)
-# ─────────────────────────────────────────────
+    return _generate_content(payload)
 
 
 def ask_llm_with_document(prompt: str, pdf_bytes: bytes) -> str:
     try:
         doc = fitz.open(stream=pdf_bytes, filetype="pdf")
         text = ""
-
-        # limit pages to avoid overload
         for page_number, page in enumerate(doc):
-            if page_number > 10:  # limit to first 10 pages
+            if page_number >= 10:
                 break
             text += page.get_text()
-
         doc.close()
-
     except Exception as e:
         log.exception("PDF read error")
-        return f"⚠️ Could not read PDF: {str(e)}"
+        return f"Could not read PDF: {str(e)}"
 
     if not text.strip():
-        return "⚠️ No readable text found in PDF."
+        return "No readable text found in PDF."
 
     trimmed_text = text[:MAX_PDF_CHARS]
-
     combined_prompt = (
-        f"{SYSTEM_PROMPT}\n\n"
         "The following is extracted text from a medical document:\n\n"
         f"{trimmed_text}\n\n"
-        f"User Question: {prompt}\n\n"
-        "Summarize key findings, medications, diagnoses, and risks."
+        f"User question: {prompt}\n\n"
+        "Summarize key findings, medications, diagnoses, risks, and recommended follow-up."
     )
-
     return ask_llm(combined_prompt)
-
-
-# ─────────────────────────────────────────────
-# PROVIDER INFO (for /health endpoint)
-# ─────────────────────────────────────────────
 
 
 def get_provider_info() -> dict:
     return {
-        "provider": "ollama",
-        "text_model": TEXT_MODEL,
-        "vision_model": VISION_MODEL,
-        "mode": "fully_local",
+        "provider": "gemini",
+        "model": GEMINI_MODEL,
+        "vision": GEMINI_MODEL,
+        "mode": "cloud_api",
+        "configured": bool(GEMINI_API_KEY),
     }
+
+
+def _generate_content(payload: dict) -> str:
+    if not GEMINI_API_KEY:
+        return (
+            "Gemini is not configured. Add GEMINI_API_KEY to your backend environment "
+            "and restart the server."
+        )
+
+    url = f"{GEMINI_API_BASE}/models/{GEMINI_MODEL}:generateContent"
+    try:
+        response = requests.post(
+            url,
+            params={"key": GEMINI_API_KEY},
+            json=payload,
+            timeout=TIMEOUT,
+        )
+        response.raise_for_status()
+        data = response.json()
+        return _extract_text(data) or "Gemini returned an empty response."
+    except requests.exceptions.Timeout:
+        return "Gemini response timed out. Please try again."
+    except requests.exceptions.HTTPError as e:
+        details = _safe_error_detail(e.response)
+        log.warning("Gemini HTTP error: %s", details)
+        return f"Gemini API error: {details}"
+    except Exception as e:
+        log.exception("Gemini request failed")
+        return f"Gemini request failed: {str(e)}"
+
+
+def _build_contents(messages: list[dict]) -> list[dict]:
+    contents = []
+    for message in messages[-10:]:
+        content = str(message.get("content", "")).strip()
+        if not content:
+            continue
+        role = "model" if message.get("role") == "assistant" else "user"
+        contents.append({"role": role, "parts": [{"text": content[:4000]}]})
+    return contents or [{"role": "user", "parts": [{"text": "Hello"}]}]
+
+
+def _extract_text(data: dict) -> str:
+    parts = []
+    for candidate in data.get("candidates", []):
+        for part in candidate.get("content", {}).get("parts", []):
+            text = part.get("text")
+            if text:
+                parts.append(text)
+    return "\n".join(parts).strip()
+
+
+def _safe_error_detail(response) -> str:
+    if response is None:
+        return "unknown HTTP error"
+    try:
+        data = response.json()
+        return data.get("error", {}).get("message") or str(data)
+    except Exception:
+        return response.text[:500]
+
+
+def _detect_image_mime(image_bytes: bytes) -> str:
+    if image_bytes.startswith(b"\xff\xd8\xff"):
+        return "image/jpeg"
+    if image_bytes.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "image/png"
+    if image_bytes.startswith(b"RIFF") and image_bytes[8:12] == b"WEBP":
+        return "image/webp"
+    return "image/jpeg"
