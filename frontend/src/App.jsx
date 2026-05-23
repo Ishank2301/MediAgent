@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, memo } from 'react'
 import * as API from './api/client'
 
 // ── Theme 
@@ -16,7 +16,7 @@ const MODES = {
   general:      { label: 'General',      emoji: '😊', grad: 'from-slate-500 to-slate-700',  hint: 'Ask anything health-related' },
   symptom:      { label: 'Symptoms',     emoji: '🩺', grad: 'from-blue-500 to-blue-700',    hint: 'Describe and assess symptoms' },
   interaction:  { label: 'Drug Check',   emoji: '💊', grad: 'from-amber-500 to-amber-700',  hint: 'Check drug interactions' },
-  prescription: { label: 'Prescription', emoji: '📋', grad: 'from-violet-500 to-violet-700', hint: 'Understand prescriptions' },
+  prescription: { label: 'Prescription', emoji: '📋', grad: 'from-violet-500 to-violet-700', hint: 'Upload prescription photo or describe medicines' },
 }
 
 const TOOLS = [
@@ -43,11 +43,11 @@ const RISK_ICO = { emergency:'🚨', urgent:'⚠️', routine:'✅', CRITICAL:'�
 const FREQ_LABELS = { once_daily:'Once daily', twice_daily:'Twice daily', three_times_daily:'3× daily', four_times_daily:'4× daily', weekly:'Weekly', as_needed:'As needed' }
 
 // ── Utilities ─────────────────────────────────────────────────────────────────
-const Badge = ({ level }) => (
+const Badge = memo(({ level }) => (
   <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold border ${RISK_CLS[level] || RISK_CLS.routine}`}>
     {RISK_ICO[level]} {level}
   </span>
-)
+))
 
 function timeAgo(iso) {
   if (!iso) return ''
@@ -68,12 +68,12 @@ function dlBlob(blob, name) {
 }
 
 // Primitive components
-const Card = ({ className = '', children, ...p }) => (
+const Card = memo(({ className = '', children, ...p }) => (
   <div className={`bg-[var(--warm-white)] dark:bg-[#1a2420] border border-[var(--border)] rounded-2xl ${className}`} {...p}>
     {children}
   </div>
-)
-const Btn = ({ v = 'primary', sm, className = '', children, ...p }) => {
+))
+const Btn = memo(({ v = 'primary', sm, className = '', children, ...p }) => {
   const base = `inline-flex items-center justify-center gap-2 font-medium transition-all active:scale-[0.97] disabled:opacity-40 disabled:cursor-not-allowed rounded-xl ${sm ? 'text-xs px-3 py-1.5' : 'text-sm px-4 py-2.5'}`
   const vars = {
     primary: 'bg-[var(--forest)] hover:bg-[var(--forest-mid)] text-white shadow-sm',
@@ -83,19 +83,19 @@ const Btn = ({ v = 'primary', sm, className = '', children, ...p }) => {
     outline: 'border border-[var(--border)] hover:border-[var(--forest-light)] text-[var(--ink)] hover:text-[var(--forest)] dark:text-[var(--ink)]',
   }
   return <button className={`${base} ${vars[v] || vars.primary} ${className}`} {...p}>{children}</button>
-}
-const Input = ({ label, wClass = '', className = '', ...p }) => (
+})
+const Input = memo(({ label, wClass = '', className = '', ...p }) => (
   <div className={wClass}>
     {label && <label className="block text-xs font-medium text-[var(--muted)] mb-1.5">{label}</label>}
     <input className={`w-full rounded-xl border border-[var(--border)] bg-[var(--warm-white)] dark:bg-[#1a2420] text-[var(--ink)] placeholder:text-[var(--muted)] placeholder:opacity-60 px-3.5 py-2.5 text-sm focus-forest transition-colors ${className}`} {...p} />
   </div>
-)
-const Select = ({ label, wClass = '', children, ...p }) => (
+))
+const Select = memo(({ label, wClass = '', children, ...p }) => (
   <div className={wClass}>
     {label && <label className="block text-xs font-medium text-[var(--muted)] mb-1.5">{label}</label>}
     <select className="w-full rounded-xl border border-[var(--border)] bg-[var(--warm-white)] dark:bg-[#1a2420] text-[var(--ink)] px-3.5 py-2.5 text-sm focus-forest" {...p}>{children}</select>
   </div>
-)
+))
 
 // ── Message markdown renderer ─────────────────────────────────────────────────
 function MsgBody({ text }) {
@@ -152,8 +152,14 @@ function ChatWindow({ session, onUpdate }) {
       setMsgs(p => [...p, { role: 'user', content: displayMsg, isFile: true, timestamp: new Date().toISOString() }])
       setLoading(true)
       try {
-        const res = await API.sendFile(session.id, pf.file, text, session.mode)
-        setMsgs(p => [...p, { role: 'assistant', content: res.response, meta: res.meta, timestamp: new Date().toISOString() }])
+        let res
+        // Use specialized prescription OCR endpoint for prescription mode with images
+        if (session.mode === 'prescription' && pf.type === 'image') {
+          res = await API.scanPrescription(pf.file)
+        } else {
+          res = await API.sendFile(session.id, pf.file, text, session.mode)
+        }
+        setMsgs(p => [...p, { role: 'assistant', content: res.response || res.llm_analysis || JSON.stringify(res), meta: res.meta, timestamp: new Date().toISOString() }])
         onUpdate?.()
       } catch (e) {
         setMsgs(p => [...p, { role: 'assistant', content: `⚠️ Upload failed: ${e.message}`, timestamp: new Date().toISOString() }])
@@ -483,49 +489,54 @@ function AppointmentsPanel() {
 }
 
 // ── NOTIFICATIONS PANEL ───────────────────────────────────────────────────────
+
+// Result display component - memoized to prevent recreation
+const ResultBox = memo(({ r }) => {
+  if (!r) return null
+  const cls = r.success !== false ? 'notif-success' : r.simulated ? 'notif-sim' : 'notif-fail'
+  return (
+    <div className={`mt-4 p-3.5 rounded-xl flex items-start gap-2.5 text-sm anim-up ${cls}`}>
+      <span className="flex-shrink-0 text-base">{r.success !== false ? (r.simulated ? '🟡' : '✅') : '❌'}</span>
+      <div>
+        <p className="font-semibold">{r.success !== false ? (r.simulated ? 'Simulated (credentials not configured)' : 'Sent successfully!') : 'Failed'}</p>
+        <p className="text-xs mt-0.5 opacity-80">{r.message || JSON.stringify(r.results || r)}</p>
+        {r.simulated && <p className="text-xs mt-1.5 opacity-70">Configure SMTP / Twilio credentials to send real messages. See the Setup Guide below.</p>}
+      </div>
+    </div>
+  )
+})
+
+// Section component - memoized to prevent recreation
+const NotifSection = memo(({ title, children }) => (
+  <Card className="p-5 space-y-4">
+    <h3 className="font-display font-semibold text-[var(--ink)]">{title}</h3>
+    {children}
+  </Card>
+))
+
 function NotificationsPanel() {
   const [email, setEmail] = useState(() => localStorage.getItem('ma-email') || '')
   const [phone, setPhone] = useState(() => localStorage.getItem('ma-phone') || '')
   const [loading, setLoading] = useState('')
   const [result, setResult] = useState(null)
 
-  const saveContacts = () => { localStorage.setItem('ma-email', email); localStorage.setItem('ma-phone', phone); alert('✅ Contacts saved!') }
+  const handleEmailChange = useCallback(e => setEmail(e.target.value), [])
+  const handlePhoneChange = useCallback(e => setPhone(e.target.value), [])
+  const saveContacts = useCallback(() => { localStorage.setItem('ma-email', email); localStorage.setItem('ma-phone', phone); alert('✅ Contacts saved!') }, [email, phone])
 
-  const run = async (fn, key) => {
+  const run = useCallback(async (fn, key) => {
     setLoading(key); setResult(null)
     try { setResult(await fn()) }
     catch (e) { setResult({ success: false, message: e.message }) }
     finally { setLoading('') }
-  }
+  }, [])
 
-  const testEmail    = () => { if (!email) return alert('Enter email first'); run(() => API.testNotif({ channel: 'email', to: email }), 'test-email') }
-  const testWA       = () => { if (!phone) return alert('Enter phone first'); run(() => API.testNotif({ channel: 'whatsapp', to: phone }), 'test-wa') }
-  const medEmail     = () => { if (!email) return alert('Enter email first'); run(() => API.sendMedReminder({ user_id: 'demo_user', channels: ['email'], email }), 'med-email') }
-  const medWA        = () => { if (!phone) return alert('Enter phone first'); run(() => API.sendMedReminder({ user_id: 'demo_user', channels: ['whatsapp'], phone }), 'med-wa') }
-  const reportEmail  = () => { if (!email) return alert('Enter email first'); run(() => API.sendAdherenceRpt({ user_id: 'demo_user', channels: ['email'], email, days: 7, include_pdf: true }), 'rpt-email') }
-  const reportWA     = () => { if (!phone) return alert('Enter phone first'); run(() => API.sendAdherenceRpt({ user_id: 'demo_user', channels: ['whatsapp'], phone, days: 7 }), 'rpt-wa') }
-
-  const ResultBox = ({ r }) => {
-    if (!r) return null
-    const cls = r.success !== false ? 'notif-success' : r.simulated ? 'notif-sim' : 'notif-fail'
-    return (
-      <div className={`mt-4 p-3.5 rounded-xl flex items-start gap-2.5 text-sm anim-up ${cls}`}>
-        <span className="flex-shrink-0 text-base">{r.success !== false ? (r.simulated ? '🟡' : '✅') : '❌'}</span>
-        <div>
-          <p className="font-semibold">{r.success !== false ? (r.simulated ? 'Simulated (credentials not configured)' : 'Sent successfully!') : 'Failed'}</p>
-          <p className="text-xs mt-0.5 opacity-80">{r.message || JSON.stringify(r.results || r)}</p>
-          {r.simulated && <p className="text-xs mt-1.5 opacity-70">Configure SMTP / Twilio credentials to send real messages. See the Setup Guide below.</p>}
-        </div>
-      </div>
-    )
-  }
-
-  const Section = ({ title, children }) => (
-    <Card className="p-5 space-y-4">
-      <h3 className="font-display font-semibold text-[var(--ink)]">{title}</h3>
-      {children}
-    </Card>
-  )
+  const testEmail    = useCallback(() => { if (!email) return alert('Enter email first'); run(() => API.testNotif({ channel: 'email', to: email }), 'test-email') }, [email, run])
+  const testWA       = useCallback(() => { if (!phone) return alert('Enter phone first'); run(() => API.testNotif({ channel: 'whatsapp', to: phone }), 'test-wa') }, [phone, run])
+  const medEmail     = useCallback(() => { if (!email) return alert('Enter email first'); run(() => API.sendMedReminder({ user_id: 'demo_user', channels: ['email'], email }), 'med-email') }, [email, run])
+  const medWA        = useCallback(() => { if (!phone) return alert('Enter phone first'); run(() => API.sendMedReminder({ user_id: 'demo_user', channels: ['whatsapp'], phone }), 'med-wa') }, [phone, run])
+  const reportEmail  = useCallback(() => { if (!email) return alert('Enter email first'); run(() => API.sendAdherenceRpt({ user_id: 'demo_user', channels: ['email'], email, days: 7, include_pdf: true }), 'rpt-email') }, [email, run])
+  const reportWA     = useCallback(() => { if (!phone) return alert('Enter phone first'); run(() => API.sendAdherenceRpt({ user_id: 'demo_user', channels: ['whatsapp'], phone, days: 7 }), 'rpt-wa') }, [phone, run])
 
   return (
     <div className="p-6 max-w-2xl space-y-5">
@@ -535,16 +546,16 @@ function NotificationsPanel() {
       </div>
 
       {/* Contacts */}
-      <Section title="📬 Your Contact Details">
+      <NotifSection title="📬 Your Contact Details">
         <div className="space-y-3">
-          <Input label="Email address" type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="you@example.com" />
-          <Input label="WhatsApp phone number" value={phone} onChange={e => setPhone(e.target.value)} placeholder="+1234567890 (include country code)" />
+          <Input label="Email address" type="email" value={email} onChange={handleEmailChange} placeholder="you@example.com" />
+          <Input label="WhatsApp phone number" value={phone} onChange={handlePhoneChange} placeholder="+1234567890 (include country code)" />
         </div>
         <Btn onClick={saveContacts} className="w-full">💾 Save Contacts</Btn>
-      </Section>
+      </NotifSection>
 
       {/* Test */}
-      <Section title="🧪 Send a Test Message">
+      <NotifSection title="🧪 Send a Test Message">
         <p className="text-xs text-[var(--muted)]">Verify your setup. If credentials aren't configured, you'll see a simulated response instead.</p>
         <div className="grid grid-cols-2 gap-2.5">
           <Btn v="soft" onClick={testEmail} disabled={!!loading}>
@@ -555,10 +566,10 @@ function NotificationsPanel() {
           </Btn>
         </div>
         <ResultBox r={result} />
-      </Section>
+      </NotifSection>
 
       {/* Medication reminders */}
-      <Section title="💊 Medication Dose Reminders">
+      <NotifSection title="💊 Medication Dose Reminders">
         <p className="text-xs text-[var(--muted)]">Send today's pending medication schedule as a reminder right now.</p>
         <div className="grid grid-cols-2 gap-2.5">
           <Btn v="soft" onClick={medEmail} disabled={!!loading}>
@@ -569,10 +580,10 @@ function NotificationsPanel() {
           </Btn>
         </div>
         <ResultBox r={result} />
-      </Section>
+      </NotifSection>
 
       {/* Adherence report */}
-      <Section title="📊 Weekly Adherence Report">
+      <NotifSection title="📊 Weekly Adherence Report">
         <p className="text-xs text-[var(--muted)]">Send a 7-day summary of your medication adherence. Email includes a PDF attachment.</p>
         <div className="grid grid-cols-2 gap-2.5">
           <Btn v="soft" onClick={reportEmail} disabled={!!loading}>
@@ -583,7 +594,7 @@ function NotificationsPanel() {
           </Btn>
         </div>
         <ResultBox r={result} />
-      </Section>
+      </NotifSection>
 
       {/* Auto-schedule info */}
       <Card className="p-5 bg-[var(--mint)] dark:bg-[#1a2e24] border-[var(--sage)] border-opacity-30 space-y-2">
